@@ -43,7 +43,7 @@ Rewards boost are calculated via 'working_balances' and 'working_supply' concept
     Example: 1 LP token with no boost = 0.4 working_balances
              1 LP token with 1.5 boost = 1.5 working_balances
              1 LP token with 2.5 boost = 2.5 working_balances
-'working_balances' - the sum of all 'working_balances' of users who provided liquidity in the gauge.
+'working_supply' - the sum of all 'working_balances' of users who provided liquidity in the gauge.
 
 NOTE: we take WEEK here as period between checkpoint. Generally, it should be period of 'weight' changes. Here in simplicity we hardcode 'weight' in constructor
 But in curve the 'weight' is updated once per week from gauge controller
@@ -100,14 +100,14 @@ def _update_working_balance(
     boost_total: uint256,
 ):
     """
-    NOTE: should be called inside deposit/withdrawal functions, but after _update_checkpoint
+    NOTE: should be called inside deposit/withdrawal functions, but after _checkpoint
     @param user address of user to update working balance
     @param user_liquidity how much LP tokens user has deposited generally
     @param total_liquidity how much LP tokens all users deposited
     @param boost_balance how much of boost balance user has
     @param boost_total boost total balance
-    In curve 'boost_balance' and 'boost_total' are 'voting_balance' and 'voting_balance' respectively. In other words,
-    'voting_balance' is veCRV balance, and 'voting_balance' is veCRV total supply. Ir means how many voting tokens user has
+    In curve 'boost_balance' and 'boost_total' are 'voting_balance' and 'voting_total' respectively. In other words,
+    'voting_balance' is veCRV balance, and 'voting_total' is veCRV total supply. Ir means how many voting tokens user has
     THe more he/she has, the bigger boost
     Generally 'boost_balance' and 'boost_total' can be any boosting factor
 
@@ -220,3 +220,30 @@ def get_boost_factor(user: address) -> uint256:
 @external
 def checkpoint(user: address):
     self._checkpoint(user)    
+
+@external
+@view
+def get_rate() -> uint256:
+    return rate
+
+@external
+@view
+def get_weight() -> uint256:
+    return weight
+
+@external
+@view
+def get_user_wb(user: address) -> uint256:
+    return self.working_balances[user]
+
+@external
+@view
+def get_working_supply() ->  uint256:
+    return self.working_supply
+    
+
+@external
+@view
+def get_user_reward(user: address) -> uint256:
+    return self.integrate_fraction[user]
+    
