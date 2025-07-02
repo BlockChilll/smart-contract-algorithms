@@ -66,7 +66,6 @@ def test_checkpoint(reward_contract, alice, bob):
 
     reward_contract.checkpoint(bob)
     invest_lp_token_max_boost_bob(reward_contract, bob)
-    #1.2096e+24
 
     boa.env.time_travel(2*WEEK)
     # 30240000000000000000000 + rate * weight * dt * _working_balance // working_supply   30240000000000000000000 + 1e18 * 5e17 * 604800 * 10e18 // 20e18 * 1e18 = 30240000000000000000000 + 15120000000000000000000

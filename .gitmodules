@@ -1,0 +1,3 @@
+[submodule "reward-accumulation-curve-like/solidity/lib/forge-std"]
+	path = reward-accumulation-curve-like/solidity/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
