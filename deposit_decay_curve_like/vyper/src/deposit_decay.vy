@@ -100,7 +100,7 @@ def _checkpoint(
             else:
                 new_dslope = self.slope_changes[new_locked.end]
 
-        # change global checkpoint
+    # change global checkpoint
 
     last_point: Point = Point(
         bias=0, slope=0, ts=block.timestamp, blk=block.number
@@ -146,9 +146,11 @@ def _checkpoint(
         else:
             self.point_history[_epoch] = last_point
 
+    self.epoch = _epoch
+
     if addr != convert(0, address):
         last_point.bias = last_point.bias + u_new.bias - u_old.bias
-        last_point.bias = last_point.slope + u_new.slope - u_old.slope
+        last_point.slope = last_point.slope + u_new.slope - u_old.slope
         if last_point.slope < 0:
             last_point.slope = 0
         if last_point.bias < 0:
@@ -189,6 +191,7 @@ def _balance_of(user: address) -> uint256:
     bias: int128 = last_point.bias - last_point.slope * convert(
         (block.timestamp - last_point.ts), int128
     )
+
     if bias < 0:
         bias = 0
 
