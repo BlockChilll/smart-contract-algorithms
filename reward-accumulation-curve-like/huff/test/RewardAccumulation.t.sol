@@ -2,19 +2,27 @@
 pragma solidity ^0.8.13;
 
 import {Test, console} from "forge-std/Test.sol";
-import {RewardAccumulation} from "../src/RewardAccumulation.sol";
-import {RewardAccumulationScript} from "../script/RewardAccumulation.s.sol";
+import {HuffDeployer} from "foundry-huff/HuffDeployer.sol";
+import {IRewardAccumulation} from "./interfaces/IRewardAccumulation.sol";
 
 contract RewardAccumulationTest is Test {
-    RewardAccumulation public rewardAccumulation;
+    string public constant HUFF_LOCATION = "RewardAccumulation";
+
+    IRewardAccumulation public rewardAccumulation;
+
+    uint256 s_rate = 1e18;
+    uint256 s_weight = 5e17;
 
     address alice = makeAddr("alice");
     address bob = makeAddr("bob");
     uint256 constant WEEK = 604800;
 
     function setUp() public {
-        RewardAccumulationScript rewardAccumulationScript = new RewardAccumulationScript();
-        rewardAccumulation = rewardAccumulationScript.run();
+        bytes memory args = abi.encode(s_weight, s_rate);
+
+        rewardAccumulation = IRewardAccumulation(
+            HuffDeployer.deploy_with_args(HUFF_LOCATION, args)
+        );
     }
 
     function testContractDeploy() public view {
@@ -23,12 +31,37 @@ contract RewardAccumulationTest is Test {
 
     function testRate() public view {
         uint256 rate = rewardAccumulation.getRate();
-        assert(rate == 1e18);
+        assert(rate == s_rate);
     }
 
     function testWeight() public view {
         uint256 weight = rewardAccumulation.getWeight();
-        assert(weight == 5e17);
+        assert(weight == s_weight);
+    }
+
+    function testWorkingSupply() public view {
+        uint256 ws = rewardAccumulation.getWorkingSupply();
+        assert(ws == 0);
+    }
+
+    function testPeriodTimestamp() public view {
+        uint256 t = rewardAccumulation.getPeriodTimestamp(0);
+        assert(t == block.timestamp);
+    }
+
+    function testGetUserWb() public view {
+        uint256 wb = rewardAccumulation.getUserWb(address(this));
+        assert(wb == 0);
+    }
+
+    function testGetUserReward() public view {
+        uint256 ur = rewardAccumulation.getUserReward(address(this));
+        assert(ur == 0);
+    }
+
+    function testGetUserBoostFactor() public view {
+        uint256 ubf = rewardAccumulation.getBoostFactor(address(this));
+        assert(ubf == 0);
     }
 
     function testUpdateWorkingBalanceMax() public {
@@ -114,11 +147,6 @@ contract RewardAccumulationTest is Test {
         uint256 bobR1 = rewardAccumulation.getUserReward(bob);
         console.log(bobR1);
         assert(bobR1 == 302400000000000000000000);
-    }
-
-    function testPeriodTimestamp() public view {
-        uint256 t = rewardAccumulation.getPeriodTimestamp(0);
-        assert(t == block.timestamp);
     }
 
     // ------------------------------------------------------------------

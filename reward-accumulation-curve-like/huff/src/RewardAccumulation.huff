@@ -1,0 +1,363 @@
+// ------------------------------------------------------------------
+//                               INTERFACES
+// ------------------------------------------------------------------
+
+#define function updateWorkingBalance(address,uint256,uint256,uint256,uint256) nonpayable returns () 
+#define function getBoostFactor(address) view returns (uint256)
+#define function checkpoint(address) nonpayable returns ()
+#define function getRate() view returns (uint256)
+#define function getWeight() view returns (uint256)
+#define function getUserWb(address) view returns (uint256)
+#define function getWorkingSupply() view returns (uint256)
+#define function getUserReward(address) view returns (uint256)
+#define function getPeriodTimestamp(uint256) view returns (uint256)
+
+// ------------------------------------------------------------------
+//                               CONSTANTS
+// ------------------------------------------------------------------
+
+// percent of liquidity counted as working_balance when boost is zero - 40%
+#define constant TOKENLESS_PRODUCTION = 0x28 // 40 in dec
+// week seconds
+#define constant WEEK = 0x93a80 // 604800 in dec
+
+/* Storage Slots */
+#define constant workingBalances = FREE_STORAGE_POINTER()
+#define constant workingSupply = FREE_STORAGE_POINTER()
+#define constant balanceOf = FREE_STORAGE_POINTER()
+#define constant totalSupply = FREE_STORAGE_POINTER()
+#define constant period = FREE_STORAGE_POINTER()
+#define constant periodTimestamp = FREE_STORAGE_POINTER()
+#define constant integrateInvSupply = FREE_STORAGE_POINTER()
+#define constant integrateInvSupplyOf = FREE_STORAGE_POINTER()
+#define constant integrateCheckpointOf = FREE_STORAGE_POINTER()
+#define constant integrateFraction = FREE_STORAGE_POINTER()
+
+/* Immutables */
+// rate of reward accumulation per second,  1e18 precision
+#define constant RATE_OFFSET = 0x0000000000000000000000000000000000000000000000000000000000000020
+// weight of rewards for current file,  1e18 precision
+#define constant WEIGHT_OFFSET = 0x0000000000000000000000000000000000000000000000000000000000000040
+
+// ------------------------------------------------------------------
+//                               CONSTRUCTOR
+// ------------------------------------------------------------------
+
+#define macro CONSTRUCTOR() = takes (0) returns (0) {
+    // This constructor will return the runtime bytecode with all the 
+    // constructor arguments concatenated at the end.
+
+    // periodTimestamp init : periodTimestamp.push(block.timestamp)
+    0x01 [periodTimestamp] sstore                           // [] - length of the periodTimestamp array inited to 1
+    [periodTimestamp] 0x00 mstore                           // [] - store [periodTimestamp] at 0x00 memory location
+    0x20 0x00 sha3                                          // [hash] - hash 0x00 place in memory with 0x20 size (32 bytes) - hash array slot
+    timestamp swap1                                         // [hash, timestamp]
+    sstore                                                  // [] - store timestamp as first element of periodTimestamp array
+
+    // integrateInvSupply init : integrateInvSupply.push(0)
+    0x01 [integrateInvSupply] sstore                        // [] - length of the integrateInvSupply array inited to 1
+    [integrateInvSupply] 0x00 mstore                        // [] - store [integrateInvSupply] at 0x00 memory location
+    0x20 0x00 sha3                                          // [hash] - hash 0x00 place in memory with 0x20 size (32 bytes) - hash array slot
+    0x00 swap1                                              // [hash, 0x00]
+    sstore                                                  // [] - store 0 as first element of integrateInvSupply array
+
+    // Copy the runtime bytecode with constructor argument concatenated.
+    0x29                                                    // [offset] - constructor code size
+    dup1                                                    // [offset, offset]
+    codesize                                                // [total_size, offset, offset]
+    sub                                                     // [runtime_size, offset]
+    dup1                                                    // [runtime_size, runtime_size, offset]
+    swap2                                                   // [offset, runtime_size, runtime_size]
+    returndatasize                                          // [return_offset, offset, runtime_size, runtime_size]
+    codecopy                                                // [runtime_size]
+
+    // Return the runtime bytecode.
+    returndatasize                                          // [return_offset, runtime_size]
+return                                                      // []
+    // NOTE: deployer must add rate and weight constructor args to the end of the compiled code
+    // NOTE: deployer must measure offset for runtime code 
+}
+
+// ------------------------------------------------------------------
+//                               FUNCTIONS DISPATCHER
+// ------------------------------------------------------------------
+
+#define macro MAIN() = takes(0) returns(0) {
+    // Identify which function is being called.
+    0x00 calldataload 0xE0 shr
+
+    dup1 __FUNC_SIG(updateWorkingBalance) eq updateWorkingBalance jumpi
+    dup1 __FUNC_SIG(getBoostFactor) eq getBoostFactor jumpi
+    dup1 __FUNC_SIG(checkpoint) eq checkpoint jumpi
+    dup1 __FUNC_SIG(getRate) eq getRate jumpi
+    dup1 __FUNC_SIG(getWeight) eq getWeight jumpi
+    dup1 __FUNC_SIG(getUserWb) eq getUserWb jumpi
+    dup1 __FUNC_SIG(getWorkingSupply) eq getWorkingSupply jumpi
+    dup1 __FUNC_SIG(getUserReward) eq getUserReward jumpi
+    dup1 __FUNC_SIG(getPeriodTimestamp) eq getPeriodTimestamp jumpi
+
+    // Revert on failed dispatch
+    0x00 dup1 revert
+
+    updateWorkingBalance:
+        UPDATE_WORKING_BALANCE()
+    getBoostFactor:
+        GET_BOOST_FACTOR()
+    checkpoint:
+        CHECKPOINT()
+    getRate:
+        GET_RATE()
+    getWeight:
+        GET_WEIGHT()
+    getUserWb:
+        GET_USER_WB()
+    getWorkingSupply:
+        GET_WORKING_SUPPLY()
+    getUserReward:
+        GET_USER_REWARD()
+    getPeriodTimestamp:
+        GET_PERIOD_TIMESTAMP()
+
+    stop
+}
+
+// ------------------------------------------------------------------
+//                               FUNCTIONS
+// ------------------------------------------------------------------
+
+#define macro GET_PERIOD_TIMESTAMP() = takes (0) returns (0) {
+    0x04 calldataload                                       // [index]
+    [periodTimestamp] 0x00 mstore                           // [index]
+    0x20 0x00 sha3                                          // [hash, index] 
+    add                                                     // [hash + index]
+    sload                                                   // [value]
+    0x00 mstore                                             // [] 
+    0x20 0x00 return                                        // [] 
+}
+
+#define macro GET_RATE() = takes (0) returns (0) {
+    _GET_IMMUTABLE(RATE_OFFSET, 0x00)                       // [value]
+    0x00 mstore                                             // []
+    0x20 0x00 return                                        // []
+}
+
+#define macro GET_WEIGHT() = takes (0) returns (0) {
+    _GET_IMMUTABLE(WEIGHT_OFFSET, 0x00)                     // [value]
+    0x00 mstore                                             // []
+    0x20 0x00 return                                        // []
+}
+
+#define macro GET_WORKING_SUPPLY() = takes (0) returns (0) {
+    [workingSupply] sload                                   // [value]
+    0x00 mstore                                             // []  
+    0x20 0x00 return                                        // []
+}
+
+#define macro GET_USER_WB() = takes (0) returns (0) {
+    0x04 calldataload                                       // [address-key]
+    [workingBalances]                                       // [workingBalances-slot, address-key]
+    GET_SLOT_FROM_KEYS(0x00)                                // [slot-hash]
+    sload                                                   // [value]
+    0x00 mstore                                             // [] 
+    0x20 0x00 return                                        // []
+}
+
+#define macro GET_USER_REWARD() = takes (0) returns (0) {
+    0x04 calldataload                                       // [address-key]
+    [integrateFraction]                                     // [integrateFraction-slot, address-key]
+    GET_SLOT_FROM_KEYS(0x00)                                // [slot-hash]
+    sload                                                   // [value]
+    0x00 mstore                                             // [] 
+    0x20 0x00 return                                        // []
+}
+
+#define macro GET_BOOST_FACTOR() = takes (0) returns (0) {
+    // get user workingBalance
+    0x04 calldataload                                       // [address-key]
+    [workingBalances]                                       // [workingBalances-slot, address-key]
+    GET_SLOT_FROM_KEYS(0x00)                                // [slot-hash]
+    sload                                                   // [workingBalance-value]
+
+    // get user balance
+    0x04 calldataload                                       // [address-key, workingBalance-value]
+    [balanceOf]                                             // [balanceOf-slot, address-key, workingBalance-value]
+    GET_SLOT_FROM_KEYS(0x00)                                // [slot-hash, workingBalance-value]
+    sload                                                   // [balanceOf-value, workingBalance-value]
+
+    [TOKENLESS_PRODUCTION]                                  // [TOKENLESS_PRODUCTION, balanceOf-value, workingBalance-value]
+    mul                                                     // [TOKENLESS_PRODUCTION * balanceOf-value, workingBalance-value]
+    0x64 swap1                                              // [TOKENLESS_PRODUCTION * balanceOf-value, 100, workingBalance-value] 
+    div swap1                                               // [workingBalance-value, TOKENLESS_PRODUCTION * balanceOf-value / 100]
+    div                                                     // [workingBalance-value / (TOKENLESS_PRODUCTION * balanceOf-value / 100)]
+    0x00 mstore                                             // [] 
+    0x20 0x00 return                                        // []
+}
+
+// calldata args: address user,uint256 userLiquidity,uint256 totalLiquidity,uint256 boostBalance,uint256 boostTotal
+#define macro UPDATE_WORKING_BALANCE() = takes (0) returns (0) {
+    0x04 0x20 add calldataload                              // [userLiquidity]
+    [TOKENLESS_PRODUCTION] mul                              // [TOKENLESS_PRODUCTION * userLiquidity]
+    0x64 swap1 div                                          // [TOKENLESS_PRODUCTION * userLiquidity / 100 = limit]
+
+    0x03 0x20 mul 0x04 add calldataload dup1                // [boostBalance, boostBalance, limit]
+    0x00                                                    // [0x00, boostBalance, boostBalance, limit]
+    eq                                                      // [0x00 == boostBalance, boostBalance, limit]
+    afterLimitCalc jumpi                                    // [boostBalance, limit]
+    0x02 0x20 mul 0x04 add calldataload                     // [totalLiquidity, boostBalance, limit]
+    0x04 0x20 mul 0x04 add calldataload                     // [boostTotal, totalLiquidity, boostBalance, limit]
+    swap2 mul div                                           // [boostBalance * totalLiquidity / boostTotal, limit]
+
+    [TOKENLESS_PRODUCTION] 0x64 sub                         // [100 - TOKENLESS_PRODUCTION, boostBalance * totalLiquidity / boostTotal, limit]
+    mul                                                     // [(100 - TOKENLESS_PRODUCTION) * (boostBalance * totalLiquidity / boostTotal), limit]
+    0x64 swap1 div                                          // [(100 - TOKENLESS_PRODUCTION) * (boostBalance * totalLiquidity / boostTotal) / 100, limit]
+    add                                                     // [(100 - TOKENLESS_PRODUCTION) * (boostBalance * totalLiquidity / boostTotal) / 100 + limit = newLimit]
+    0x00                                                    // [0x00, newLimit]
+
+    afterLimitCalc:
+        0x04 0x20 add calldataload swap1 swap2 dup1 swap2   // [userLiquidity, newLimit, newLimit, 0x00 or boostBalance]
+        lt limitIsUserLiquidity jumpi                       // [newLimit, 0x00 or boostBalance]
+        finalCal jump 
+        
+    limitIsUserLiquidity:
+        pop 0x04 0x20 add calldataload                      // [final limit, 0x00 or boostBalance]
+
+    // input stack [limit, 0x00 or boostBalance]
+    finalCal:
+        swap1 pop                                           // [limit]
+        0x04 calldataload                                   // [user-key, limit]
+        [workingBalances]                                   // [workingBalances-slot, user-key, limit]
+        GET_SLOT_FROM_KEYS(0x00) dup1                       // [slot-hash, slot-hash, limit]
+        sload                                               // [oldWBalance, slot-hash, limit]
+        dup3 swap1 swap2                                    // [slot-hash, limit, oldWBalance, limit]
+        sstore swap1                                        // [limit, oldWBalance]
+        [workingSupply] sload                               // [workingSupply, limit, oldWBalance]
+        add sub                                             // [workingSupply + limit - oldWBalance]   
+        [workingSupply] sstore         
+}
+
+// calldata args: address user
+#define macro CHECKPOINT() = takes (0) returns (0) {
+    [period] sload dup1 dup1 0x00 mstore                    // [_period, _period]             memory: [_period]          
+    [workingSupply] sload 0x20 mstore                       // [_period, _period]             memory: [_period, _workingSupply]
+    [integrateInvSupply] 0x40 mstore 0x20 0x40 sha3 add     // [integrateInvSupply hash + period slot, _period]
+    sload 0x40 mstore                                       // [_period]                      memory: [_period, _workingSupply, _integrateInvSupply]
+
+    [periodTimestamp] 0x60 mstore 0x20 0x60 sha3 add        // [periodTimestamp_period slot]
+    sload dup1                                              // [_periodTime, _periodTime]
+    timestamp                                               // [timestamp, _periodTime, _periodTime]
+    gt updateIntegralOfOneLP jumpi                          // [_periodTime]
+
+    updateGlobalAndUserInfo:
+        // stack input [any single value], memory input [_period, _workingSupply, _integrateInvSupply]
+        pop                                                 // []
+        // times update
+
+        // period
+        0x00 mload 0x01 add                                 // [_period + 1]
+        [period] sstore                                     // []
+        // periodTimestamp
+        [periodTimestamp] sload dup1                        // [periodTimestamp's length, periodTimestamp's length]
+        0x01 add [periodTimestamp] sstore                   // [periodTimestamp's length]
+        [periodTimestamp] 0x60 mstore 0x20 0x60 sha3 add    // [periodTimestamp hash + periodTimestamp's length slot]
+        timestamp swap1 sstore                              // []
+
+        // integrateInvSupply
+        [integrateInvSupply] sload dup1                     // [integrateInvSupply's length, integrateInvSupply's length]
+        0x01 add [integrateInvSupply] sstore                // [integrateInvSupply's length]
+        [integrateInvSupply] 0x60 mstore 0x20 0x60 sha3 add // [integrateInvSupply hash + integrateInvSupply's length slot]
+        0x40 mload swap1 sstore                             // []
+        // update user's integral
+
+        // integrateFraction 
+        0x04 calldataload [integrateFraction]               // [integrateFraction-init-slot, user-key]
+        GET_SLOT_FROM_KEYS(0x60) dup1 sload                 // [current integrateFraction, integrateFraction-slot]
+        0x04 calldataload [integrateInvSupplyOf]            // [integrateInvSupplyOf-init-slot, user-key, current integrateFraction, integrateFraction-slot]
+        GET_SLOT_FROM_KEYS(0x60) sload                      // [current integrateInvSupplyOf, current integrateFraction, integrateFraction-slot]
+        0x40 mload sub                                      // [_integrateInvSupply - current integrateInvSupplyOf, current integrateFraction, integrateFraction-slot]
+        0x04 calldataload [workingBalances]                 // [workingBalances-init-slot, user-key, _integrateInvSupply - current integrateInvSupplyOf, current integrateFraction, integrateFraction-slot]
+        GET_SLOT_FROM_KEYS(0x60) sload                      // [current workingBalances, _integrateInvSupply - current integrateInvSupplyOf, current integrateFraction, integrateFraction-slot]
+        mul 0xde0b6b3a7640000 swap1 div                     // [(current workingBalances * _integrateInvSupply - current integrateInvSupplyOf) / 10e18, current integrateFraction, integrateFraction-slot]
+        add swap1 sstore                                    // []
+
+        // integrateInvSupplyOf
+        0x04 calldataload [integrateInvSupplyOf]            // [integrateInvSupplyOf-init-slot, user-key]
+        GET_SLOT_FROM_KEYS(0x60) 0x40 mload                 // [_integrateInvSupply, integrateInvSupplyOf-slot]
+        swap1 sstore                                        // []
+
+        // integrateCheckpointOf
+        0x04 calldataload [integrateCheckpointOf]            // [integrateCheckpointOf-init-slot, user-key]
+        GET_SLOT_FROM_KEYS(0x60) timestamp                   // [timestamp, integrateCheckpointOf-slot]
+        swap1 sstore
+        stop
+
+    updateIntegralOfOneLP:
+        // stack input [_periodTime], memory input [_period, _workingSupply, _integrateInvSupply]
+        dup1 0x60 mstore                                     // [_periodTime]                   memory: [_period, _workingSupply, _integrateInvSupply, prevWeekTime]
+        [WEEK] add [WEEK] swap1 div [WEEK] mul dup1 0x80 mstore   // [prevWeekTimePlusWeek]     memory: [_period, _workingSupply, _integrateInvSupply, prevWeekTime, prevWeekTimePlusWeek]    
+        timestamp swap1 lt secondWeekTimeBranch jumpi      // []
+        timestamp 0xa0 mstore                              // []                              memory: [_period, _workingSupply, _integrateInvSupply, prevWeekTime, prevWeekTimePlusWeek, weekTime]    
+        afterWeekTimeBranches jump 
+        secondWeekTimeBranch:
+            0x80 mload 0xa0 mstore                           // []
+        afterWeekTimeBranches:
+            // for loop
+            0x00 start jump                                  // [0 index]
+            continue:
+                dup1 0x1f4 lt end jumpi                      // [index]   
+                start:
+                    0x00 0x20 mload eq afterIntegrateInvSupplyUpdate jumpi        // [index]
+                    0x60 mload 0xa0 mload sub                // [weekTime - prevWeekTime = dt, index]           
+                    _GET_IMMUTABLE(RATE_OFFSET, 0xc0)        // [rate, dt, index]
+                    _GET_IMMUTABLE(WEIGHT_OFFSET, 0xc0)      // [weight, rate, dt, index]
+                    mul mul                                  // [weight * rate * dt, index]
+                    0x20 mload swap1 div                     // [weight * rate * dt / _workingSupply, index]
+                    0x40 mload add                           // [(_integrateInvSupply + (weight * rate * dt / _workingSupply)), index]  
+                    0x40 mstore                              // [index]   
+
+                    afterIntegrateInvSupplyUpdate:
+                        0xa0 mload timestamp eq end jumpi    // [index]
+
+                    // prevWeekTime update
+                    0xa0 mload 0x60 mstore                   // [index]
+                    // prevWeekTimePlusWeek update
+                    0xa0 mload [WEEK] add dup1 0x80 mstore   // [new prevWeekTimePlusWeek, index]
+                    // weekTime update
+                    timestamp swap1 lt secondNewWeekTimeBranch jumpi      // [index]
+                    timestamp 0xa0 mstore                                 // [index]
+                    afterNewWeekTimeBranches jump                         // [index]
+                    secondNewWeekTimeBranch:                
+                        0x80 mload 0xa0 mstore                            // [index]
+                    afterNewWeekTimeBranches:  
+                        0x01 add                                          // [index + 1]
+
+                        continue jump
+
+            end:
+                updateGlobalAndUserInfo jump                         // [index]
+}
+
+// ------------------------------------------------------------------
+//                               UTILS
+// ------------------------------------------------------------------
+
+/// @notice Retrives an "immutable" from the runtime bytecode.
+#define macro _GET_IMMUTABLE(offset_end, free_memory) = takes (0) returns (1) {
+    0x20                                                    // [size]
+    <offset_end> codesize sub                               // [offset_code, size]
+    <free_memory>                                           // [offset_memory, offset_code, size]
+    codecopy                                                // []
+    <free_memory> mload                                     // [value]
+}
+
+#define macro GET_SLOT_FROM_KEYS(mem_ptr) = takes(2) returns (1) {
+    // Input stack: [slot, key]
+    // Load the data into memory.
+    <mem_ptr> 0x20 add                                      // [<mem_ptr> + 32, slot, key]
+    mstore                                                  // [key]
+    <mem_ptr>                                               // [<mem_ptr>, key]
+    mstore                                                  // []
+    // Hash the data, generating a slot.
+    0x40                                                    // [64]
+    <mem_ptr>                                               // [<mem_ptr>, 64]
+    sha3                                                    // [slot]
+}

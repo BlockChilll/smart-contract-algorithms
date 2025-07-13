@@ -136,6 +136,7 @@ contract RewardAccumulation {
      * @param user address of user
      * boost factor = workingBalances[user] / ( userLiquidity * 0.4)
      * max boost factor is 2.5
+     * NOTE: balanceOf update is made externally in deposit/withdraw functions
      */
     function _getBoostFactor(address user) internal view returns (uint256) {
         return
@@ -244,5 +245,9 @@ contract RewardAccumulation {
 
     function getUserReward(address user) external view returns (uint256) {
         return integrateFraction[user];
+    }
+
+    function getPeriodTimestamp(uint256 index) external view returns (uint256) {
+        return periodTimestamp[index];
     }
 }
